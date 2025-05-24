@@ -1,0 +1,183 @@
+name: Code-Analysis
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  pylint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: "3.13"
+    - name: Install dependencies
+      run: |
+        uv sync --all-extras
+        uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+    - name: Analysing the code with pylint
+      run: |
+        uv run pylint  -d C0301,R0913,W1202 $(git ls-files '*.py')  --max-positional-arguments 10
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: "3.13"
+    - name: Install dependencies
+      run: |
+        uv run mypy . || exit_code=$?
+        uv run mypy --install-types --non-interactive
+    - name: Analysing the code with mypy
+      run: |
+        uv run mypy --ignore-missing-imports --disallow-any-generics --disallow-untyped-defs --no-implicit-optional --disallow-incomplete-defs .
+  pydocstyle:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.13"
+    - name: Install dependencies
+      run: |
+        python -m pip install pydocstyle
+    - name: Analysing the code with pydocstyle
+      run: |
+        pydocstyle .
+
+  docsig:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.13"
+    - name: Install dependencies
+      run: |
+        python -m pip install docsig
+    - name: Analysing the code with docsig
+      run: |
+        docsig --check-class-constructor --check-dunders --check-protected-class-methods --check-nested --check-overridden --check-protected .
+
+  flake8:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install flake8
+      - name: Analysing the code with flake8
+        run: |
+          flake8 --extend-ignore=D203,E203,E501,W503 --extend-exclude .venv .
+
+  interrogate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install interrogate
+      - name: Analysing the code with interrogate
+        run: |
+         interrogate --ignore-overloaded-functions -vv .
+
+  bandit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install bandit
+      - name: Analysing the code with bandit
+        run: |
+         bandit -r --skip=B404,B603,B602 -c pyproject.toml .
+
+  pyright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Analysing the code with pyright
+        run: |
+          uv run --all-extras pyright .
+
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Analysing the code with ruff
+        run: |
+          uv run ruff check --config pyproject.toml
+
+  ruff-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Analysing the code with ruff
+        run: |
+          uvx ruff format --check
+
+  test_basis:
+    needs:
+        - pylint
+        - mypy
+        - pydocstyle
+        - docsig
+        - flake8
+        - interrogate
+        - bandit
+        - ruff
+        - ruff-format
+        - pyright
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          pip install coverage
+          pip install .
+      - name: Run unit-tests
+        run: |
+          # Run only the core test suite in the tests directory.
+          coverage run --source=molpipeline,tests -m unittest discover tests
+          # Create a coverage report. Fail if the coverage is below 85%. Exclude extra packages from the report.
+          coverage report --fail-under=85 --omit="*chemprop*","*/*chemprop*/*"
